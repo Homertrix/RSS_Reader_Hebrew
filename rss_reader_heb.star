@@ -1,8 +1,8 @@
 """
-Applet: RSS Reader
-Summary: RSS Feed Reader
-Description: Displays entries from an RSS feed URL.
-Author: Homertrix
+Applet: RSS Reader RTL
+Summary: RSS Feed Reader with basic Hebrew RTL support
+Description: Displays entries from an RSS feed URL. If a title looks like Hebrew, it is rendered right-to-left.
+Author: Homertrix/ChatGPT (based on original by Daniel Sitnik)
 """
 
 load("http.star", "http")
@@ -10,19 +10,49 @@ load("render.star", "render")
 load("schema.star", "schema")
 load("xpath.star", "xpath")
 
-# cache data for 15 minutes
+# Cache data for 15 minutes
 CACHE_TTL_SECONDS = 900
 
+# Defaults
 DEFAULT_FEED_URL = "https://discuss.tidbyt.com/latest.rss"
+DEFAULT_FEED_NAME = "RSS Feed"
 DEFAULT_ARTICLE_COUNT = "3"
-DEFAULT_FEED_NAME = "Tidbyt Forums"
+
 DEFAULT_TITLE_COLOR = "#db7e35"
 DEFAULT_TITLE_BG_COLOR = "#333333"
 DEFAULT_ARTICLE_COLOR = "#65d1e6"
-DEFAULT_SHOW_CONTENT = False
 DEFAULT_CONTENT_COLOR = "#ff8c00"
-DEFAULT_FONT = "tom-thumb"
+DEFAULT_FONT = "tb-8"
 
+# A set of Hebrew letters we use for simple detection.
+# This is equivalent to checking "ASCII / codepoints" for the Hebrew block.
+HEBREW_CHARS = "אבגדהוזחטיךכלםמןנסעףפץצקרשת״׳"
+
+def is_hebrew_text(text, debug_label, debug_hebrew):
+    """Return True if the string looks like it contains Hebrew letters."""
+    if text == None:
+        return False
+
+    for c in text:
+        if c in HEBREW_CHARS:
+            if debug_hebrew:
+                print("HEBREW DETECTED in %s: %s" % (debug_label, text))
+            return True
+
+    if debug_hebrew:
+        print("NO HEBREW in %s: %s" % (debug_label, text))
+    return False
+
+def process_text_for_rtl(text, debug_label, debug_hebrew):
+    """If text is Hebrew, reverse it and align right. Otherwise, keep as-is."""
+    if text == None:
+        return ("", "left")
+
+    if is_hebrew_text(text, debug_label, debug_hebrew):
+        # Reverse the string so it reads right-to-left on a left-to-right display.
+        return (text[::-1], "right")
+
+    return (text, "left")
 
 def main(config):
     """Main app method.
@@ -34,58 +64,97 @@ def main(config):
         render.Root: Root widget tree.
     """
 
-    # get config values
+    # Get config values (all as strings, like the original app)
     feed_url = config.get("feed_url", DEFAULT_FEED_URL)
     feed_name = config.get("feed_name", DEFAULT_FEED_NAME)
     title_color = config.get("title_color", DEFAULT_TITLE_COLOR)
     title_bg_color = config.get("title_bg_color", DEFAULT_TITLE_BG_COLOR)
     article_count = int(config.get("article_count", DEFAULT_ARTICLE_COUNT))
     article_color = config.get("article_color", DEFAULT_ARTICLE_COLOR)
-    show_content = config.bool("show_content", DEFAULT_SHOW_CONTENT)
     content_color = config.get("content_color", DEFAULT_CONTENT_COLOR)
     font = config.get("font", DEFAULT_FONT)
 
-    # if feed name is empty, show as "RSS Feed"
-    if feed_name.strip() == "":
+    # Booleans are passed as strings when set via config JSON, so normalize.
+    show_content_raw = str(config.get("show_content", "false")).lower()
+    show_content = show_content_raw == "true"
+
+    debug_hebrew_raw = str(config.get("debug_hebrew", "false")).lower()
+    debug_hebrew = debug_hebrew_raw == "true"
+
+    # Fallbacks
+    if feed_name == None or feed_name.strip() == "":
         feed_name = "RSS Feed"
 
-    # if feed url is empty, use default
-    if feed_url.strip() == "":
+    if feed_url == None or feed_url.strip() == "":
         feed_url = DEFAULT_FEED_URL
 
-    # get feed articles
+    # Get feed articles
     articles = get_feed(feed_url, article_count)
 
-    # render view
+    if len(articles) == 0:
+        # Show a simple error message instead of returning nothing,
+        # so Tidbyt doesn't skip the app.
+        return render.Root(
+            delay = 100,
+            show_full_animation = True,
+            child = render.Column(
+                main_align = "center",
+                cross_align = "center",
+                children = [
+                    render.Box(
+                        width = 64,
+                        height = 32,
+                        color = "#000000",
+                        child = render.Text(
+                            content = "No items",
+                            font = font,
+                            color = "#FFFFFF",
+                        ),
+                    ),
+                ],
+            ),
+        )
+
+    # Render view
     return render.Root(
         delay = 100,
         show_full_animation = True,
         child = render.Column(
+            main_align = "start",
+            cross_align = "start",
             children = [
-                # Title bar (only change: align = "right")
+                # Title bar at the top
                 render.Box(
                     width = 64,
                     height = 8,
                     color = title_bg_color,
-                    child = render.Text(
-                        feed_name,
-                        color = title_color,
-                        font = "tom-thumb",
-                        align = "right",
+                    child = render.Padding(
+                        pad = (1, 1, 1, 1),
+                        child = render.Text(
+                            content = feed_name,
+                            font = font,
+                            color = title_color,
+                        ),
                     ),
                 ),
+                # Vertical marquee with the articles
                 render.Marquee(
+                    width = 64,
                     height = 24,
                     scroll_direction = "vertical",
-                    offset_start = 24,
+                    offset_start = 32,
+                    offset_end = 0,
+                    align = "start",
                     child = render.Column(
-                        main_align = "space_between",
+                        main_align = "start",
+                        cross_align = "start",
                         children = render_articles(
                             articles,
                             show_content,
                             article_color,
                             content_color,
                             font,
+                            debug_hebrew,
                         ),
                     ),
                 ),
@@ -93,8 +162,7 @@ def main(config):
         ),
     )
 
-
-def render_articles(articles, show_content, article_color, content_color, font):
+def render_articles(articles, show_content, article_color, content_color, font, debug_hebrew):
     """Renders the widgets to display the articles.
 
     Args:
@@ -107,46 +175,60 @@ def render_articles(articles, show_content, article_color, content_color, font):
         list: List of widgets.
     """
 
-    # formats color and font of text
-    article_text = []
+    widgets = []
 
-    for article in articles:
-        title = article[0]
-        body = article[1]
+    for idx, article in enumerate(articles):
+        title_raw = article[0]
+        content_raw = article[1]
 
-        # Headline: right-aligned across full 64 pixel width
-        article_text.append(
+        # Process title for Hebrew RTL
+        title_text, title_align = process_text_for_rtl(
+            title_raw,
+            "title #%d" % (idx + 1),
+            debug_hebrew,
+        )
+
+        widgets.append(
             render.WrappedText(
-                title.strip(),
+                content = title_text,
                 color = article_color,
                 font = font,
                 width = 64,
-                align = "right",
-            )
+                align = title_align,
+            ),
         )
 
+        # Optionally render article content (description/body)
         if show_content:
-            # Content: also right-aligned
-            article_text.append(
+            body_text, body_align = process_text_for_rtl(
+                content_raw,
+                "content #%d" % (idx + 1),
+                debug_hebrew,
+            )
+
+            widgets.append(
                 render.WrappedText(
-                    body.strip(),
+                    content = body_text,
                     color = content_color,
                     font = font,
                     width = 64,
-                    align = "right",
-                )
+                    align = body_align,
+                ),
             )
 
         # Spacer between articles
-        article_text.append(
-            render.Box(width = 64, height = 8, color = "#000000")
+        widgets.append(
+            render.Box(
+                width = 64,
+                height = 4,
+                color = "#000000",
+            ),
         )
 
-    return article_text
-
+    return widgets
 
 def get_feed(url, article_count):
-    """Retrieves an RSS feeds and builds a list with article's titles and content.
+    """Retrieves an RSS feed and builds a list with article titles and content.
 
     Args:
         url (str): The RSS feed URL.
@@ -158,23 +240,25 @@ def get_feed(url, article_count):
 
     res = http.get(url = url, ttl_seconds = CACHE_TTL_SECONDS)
     if res.status_code != 200:
-        fail("Request to %s failed with status code: %d: %s" %
-             (url, res.status_code, res.body()))
+        fail("Request to %s failed with status code: %d: %s" % (url, res.status_code, res.body()))
 
     articles = []
     data_xml = xpath.loads(res.body())
+
     for i in range(1, article_count + 1):
         title_query = "//item[%s]/title" % str(i)
         desc_query = "//item[%s]/description" % str(i)
-        articles.append(
-            (
-                data_xml.query(title_query),
-                str(data_xml.query(desc_query)).replace("None", ""),
-            )
-        )
+
+        # Convert result to string and clean up "None"
+        title_raw = str(data_xml.query(title_query)).replace("None", "").strip()
+        desc_raw = str(data_xml.query(desc_query)).replace("None", "").strip()
+
+        if title_raw == "" and desc_raw == "":
+            continue
+
+        articles.append((title_raw, desc_raw))
 
     return articles
-
 
 def get_schema():
     """Creates the schema for the configuration screen.
@@ -189,23 +273,23 @@ def get_schema():
             schema.Text(
                 id = "feed_url",
                 name = "RSS Feed URL",
-                desc = "The URL of the RSS feed to display.",
+                desc = "The RSS/Atom URL to read from.",
                 icon = "rss",
                 default = DEFAULT_FEED_URL,
             ),
             schema.Text(
                 id = "feed_name",
-                name = "RSS Feed Name",
-                desc = "The name of the RSS feed.",
+                name = "Feed Name",
+                desc = "Name to show in the title bar.",
                 icon = "font",
                 default = DEFAULT_FEED_NAME,
             ),
             schema.Dropdown(
                 id = "article_count",
                 name = "Article Count",
-                desc = "Number of articles to display",
-                icon = "hashtag",
-                default = "3",
+                desc = "Number of articles to display.",
+                icon = "list-ol",
+                default = DEFAULT_ARTICLE_COUNT,
                 options = [
                     schema.Option(display = "1", value = "1"),
                     schema.Option(display = "2", value = "2"),
@@ -214,49 +298,52 @@ def get_schema():
                     schema.Option(display = "5", value = "5"),
                 ],
             ),
-            schema.Dropdown(
+            schema.Text(
                 id = "font",
-                name = "Text Size",
-                desc = "Font size for text.",
-                icon = "textHeight",
+                name = "Font",
+                desc = "Font face to use (e.g. tb-8).",
+                icon = "font",
                 default = DEFAULT_FONT,
-                options = [
-                    schema.Option(display = "Default", value = DEFAULT_FONT),
-                    schema.Option(display = "Larger", value = "tb-8"),
-                ],
             ),
             schema.Toggle(
                 id = "show_content",
-                name = "Show Article Content",
-                desc = "Show the article's content.",
-                icon = "toggleOff",
-                default = DEFAULT_SHOW_CONTENT,
+                name = "Show article content",
+                desc = "Also show the description/body text under each title.",
+                icon = "file-alt",
+                default = False,
+            ),
+            schema.Toggle(
+                id = "debug_hebrew",
+                name = "Debug Hebrew detection",
+                desc = "Print detection results to the log.",
+                icon = "bug",
+                default = False,
             ),
             schema.Color(
                 id = "title_color",
-                name = "Feed Name Color",
-                desc = "The color of the RSS feed name.",
+                name = "Title Text Color",
+                desc = "Color of the feed title text.",
                 icon = "brush",
                 default = DEFAULT_TITLE_COLOR,
             ),
             schema.Color(
                 id = "title_bg_color",
-                name = "Feed Name Background",
-                desc = "The color of the RSS feed name background.",
+                name = "Title Background Color",
+                desc = "Background color of the title bar.",
                 icon = "brush",
                 default = DEFAULT_TITLE_BG_COLOR,
             ),
             schema.Color(
                 id = "article_color",
                 name = "Article Title Color",
-                desc = "The color of the article's title.",
+                desc = "Color of each article's title.",
                 icon = "brush",
                 default = DEFAULT_ARTICLE_COLOR,
             ),
             schema.Color(
                 id = "content_color",
                 name = "Article Content Color",
-                desc = "The color of the article's content.",
+                desc = "Color of each article's content/body.",
                 icon = "brush",
                 default = DEFAULT_CONTENT_COLOR,
             ),
