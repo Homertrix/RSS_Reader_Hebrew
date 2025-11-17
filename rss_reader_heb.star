@@ -62,6 +62,7 @@ def main(config):
         show_full_animation = True,
         child = render.Column(
             children = [
+                # Title bar (only change: align = "right")
                 render.Box(
                     width = 64,
                     height = 8,
@@ -70,7 +71,7 @@ def main(config):
                         feed_name,
                         color = title_color,
                         font = "tom-thumb",
-                        align = "right",  # RTL-style title bar
+                        align = "right",
                     ),
                 ),
                 render.Marquee(
@@ -106,32 +107,40 @@ def render_articles(articles, show_content, article_color, content_color, font):
         list: List of widgets.
     """
 
-    #formats color and font of text
+    # formats color and font of text
     article_text = []
 
     for article in articles:
-        # Headline: right-aligned across the full 64-pixel width
+        title = article[0]
+        body = article[1]
+
+        # Headline: right-aligned across full 64 pixel width
         article_text.append(
             render.WrappedText(
-                article[0].strip(),
+                title.strip(),
                 color = article_color,
                 font = font,
                 width = 64,
                 align = "right",
             )
         )
+
         if show_content:
             # Content: also right-aligned
             article_text.append(
                 render.WrappedText(
-                    article[1].strip(),
+                    body.strip(),
                     color = content_color,
                     font = font,
                     width = 64,
                     align = "right",
                 )
             )
-        article_text.append(render.Box(width = 64, height = 8, color = "#000000"))
+
+        # Spacer between articles
+        article_text.append(
+            render.Box(width = 64, height = 8, color = "#000000")
+        )
 
     return article_text
 
@@ -149,10 +158,8 @@ def get_feed(url, article_count):
 
     res = http.get(url = url, ttl_seconds = CACHE_TTL_SECONDS)
     if res.status_code != 200:
-        fail(
-            "Request to %s failed with status code: %d: %s"
-            % (url, res.status_code, res.body())
-        )
+        fail("Request to %s failed with status code: %d: %s" %
+             (url, res.status_code, res.body()))
 
     articles = []
     data_xml = xpath.loads(res.body())
@@ -200,43 +207,22 @@ def get_schema():
                 icon = "hashtag",
                 default = "3",
                 options = [
-                    schema.Option(
-                        display = "1",
-                        value = "1",
-                    ),
-                    schema.Option(
-                        display = "2",
-                        value = "2",
-                    ),
-                    schema.Option(
-                        display = "3",
-                        value = "3",
-                    ),
-                    schema.Option(
-                        display = "4",
-                        value = "4",
-                    ),
-                    schema.Option(
-                        display = "5",
-                        value = "5",
-                    ),
+                    schema.Option(display = "1", value = "1"),
+                    schema.Option(display = "2", value = "2"),
+                    schema.Option(display = "3", value = "3"),
+                    schema.Option(display = "4", value = "4"),
+                    schema.Option(display = "5", value = "5"),
                 ],
             ),
             schema.Dropdown(
                 id = "font",
                 name = "Text Size",
-                desc = " Font size for text.",
+                desc = "Font size for text.",
                 icon = "textHeight",
                 default = DEFAULT_FONT,
                 options = [
-                    schema.Option(
-                        display = "Default",
-                        value = DEFAULT_FONT,
-                    ),
-                    schema.Option(
-                        display = "Larger",
-                        value = "tb-8",
-                    ),
+                    schema.Option(display = "Default", value = DEFAULT_FONT),
+                    schema.Option(display = "Larger", value = "tb-8"),
                 ],
             ),
             schema.Toggle(
