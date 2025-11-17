@@ -1,9 +1,4 @@
-"""
-Applet: RSS Reader (Hebrew-aware)
-Summary: RSS Feed Reader
-Description: Displays entries from an RSS feed URL, with basic Hebrew RTL handling.
-Author: Homertrix (Hebrew/RTL tweaks by ChatGPT)
-"""
+# RSS Reader with basic Hebrew RTL detection (codepoint-based)
 
 load("http.star", "http")
 load("render.star", "render")
@@ -23,17 +18,11 @@ DEFAULT_SHOW_CONTENT = False
 DEFAULT_CONTENT_COLOR = "#ff8c00"
 DEFAULT_FONT = "tom-thumb"
 
-# ------------------------------------------------------------
-# Hebrew detection based on code points ("ASCII code")
-# ------------------------------------------------------------
 
 def is_hebrew(text):
     """
-    Returns True if the string contains any character in the Hebrew
-    Unicode ranges (approx. "ASCII code" check).
-
-    Hebrew block: 0x0590–0x05FF
-    Hebrew Presentation Forms: 0xFB1D–0xFB4F
+    Detect Hebrew based on code points (Unicode / 'ASCII code'):
+    Basic Hebrew block: U+0590–U+05FF == 1424–1535
     """
     if text == None:
         return False
@@ -41,35 +30,32 @@ def is_hebrew(text):
     s = str(text)
     n = len(s)
 
-    i = 0
-    while i < n:
+    for i in range(n):
         ch = s[i]
         code = ord(ch)
-        if (code >= 0x0590 and code <= 0x05FF) or (code >= 0xFB1D and code <= 0xFB4F):
+        if code >= 1424 and code <= 1535:
             return True
-        i = i + 1
 
     return False
 
 
-def reverse_string(s):
+def reverse_text(s):
     """
-    Reverse a string (no slicing step argument in Starlark).
+    Reverse a string using range(), since we can't use Python slicing with a step.
     """
     out = ""
-    i = len(s) - 1
-    while i >= 0:
+    # range(start, stop, step) – walk backwards from len(s)-1 down to 0
+    for i in range(len(s) - 1, -1, -1):
         out = out + s[i]
-        i = i - 1
     return out
 
 
 def make_wrapped_text(text, color, font):
     """
-    Create a WrappedText widget that:
-    - Detects Hebrew by codepoint.
-    - If Hebrew, reverses the string and right-aligns it.
-    - Otherwise, keeps the text as-is and left-aligns.
+    Build a WrappedText widget that:
+    - Detects Hebrew via is_hebrew()
+    - If Hebrew: reverse + right-align
+    - Else: normal + left-align
     """
     if text == None:
         s = ""
@@ -77,7 +63,7 @@ def make_wrapped_text(text, color, font):
         s = str(text).strip()
 
     if is_hebrew(s):
-        s = reverse_string(s)
+        s = reverse_text(s)
         align = "right"
     else:
         align = "left"
@@ -86,32 +72,22 @@ def make_wrapped_text(text, color, font):
         s,
         color = color,
         font = font,
-        width = 64,         # full Tidbyt width so alignment makes sense
+        width = 64,
         align = align,
     )
 
-# ------------------------------------------------------------
-# Main
-# ------------------------------------------------------------
 
 def main(config):
-    """Main app method.
+    """Main app method."""
 
-    Args:
-        config (config): App configuration.
-
-    Returns:
-        render.Root: Root widget tree.
-    """
-
-    # get config values (same IDs as original)
+    # get config values (same IDs as original app)
     feed_url = config.get("feed_url", DEFAULT_FEED_URL)
     feed_name = config.get("feed_name", DEFAULT_FEED_NAME)
     title_color = config.get("title_color", DEFAULT_TITLE_COLOR)
     title_bg_color = config.get("title_bg_color", DEFAULT_TITLE_BG_COLOR)
     article_count = int(config.get("article_count", DEFAULT_ARTICLE_COUNT))
     article_color = config.get("article_color", DEFAULT_ARTICLE_COLOR)
-    show_content = config.get("show_content", DEFAULT_SHOW_CONTENT)
+    show_content = config.bool("show_content", DEFAULT_SHOW_CONTENT)
     content_color = config.get("content_color", DEFAULT_CONTENT_COLOR)
     font = config.get("font", DEFAULT_FONT)
 
@@ -126,15 +102,14 @@ def main(config):
     # get feed articles
     articles = get_feed(feed_url, article_count)
 
-    # Title bar: also Hebrew-aware (reverse + right-align if needed)
+    # Title bar: also Hebrew-aware
     title_text = str(feed_name).strip()
     if is_hebrew(title_text):
-        title_text = reverse_string(title_text)
+        title_text = reverse_text(title_text)
         title_align = "right"
     else:
         title_align = "left"
 
-    # render view
     return render.Root(
         delay = 100,
         show_full_animation = True,
@@ -170,22 +145,9 @@ def main(config):
         ),
     )
 
-# ------------------------------------------------------------
-# Rendering articles
-# ------------------------------------------------------------
 
 def render_articles(articles, show_content, article_color, content_color, font):
-    """Renders the widgets to display the articles.
-
-    Args:
-        articles (list): The list of articles to render.
-        show_content (bool): Indicates if the article content should be rendered.
-        article_color (str): Color of the article title.
-        content_color (str): Color of the article content.
-
-    Returns:
-        list: List of widgets.
-    """
+    """Renders the widgets to display the articles."""
 
     article_text = []
 
@@ -198,8 +160,8 @@ def render_articles(articles, show_content, article_color, content_color, font):
             make_wrapped_text(title, article_color, font)
         )
 
+        # Optional body: also Hebrew-aware
         if show_content:
-            # Content: Hebrew-aware as well
             article_text.append(
                 make_wrapped_text(body, content_color, font)
             )
@@ -211,20 +173,9 @@ def render_articles(articles, show_content, article_color, content_color, font):
 
     return article_text
 
-# ------------------------------------------------------------
-# RSS fetching (same structure as original)
-# ------------------------------------------------------------
 
 def get_feed(url, article_count):
-    """Retrieves an RSS feeds and builds a list with article's titles and content.
-
-    Args:
-        url (str): The RSS feed URL.
-        article_count (int): The number of articles to retrieve from the feed.
-
-    Returns:
-        list: List of tuples with (article title, article content).
-    """
+    """Retrieves an RSS feed and builds a list with article titles and content."""
 
     res = http.get(url = url, ttl_seconds = CACHE_TTL_SECONDS)
     if res.status_code != 200:
@@ -247,16 +198,9 @@ def get_feed(url, article_count):
 
     return articles
 
-# ------------------------------------------------------------
-# Configuration schema (same fields as original)
-# ------------------------------------------------------------
 
 def get_schema():
-    """Creates the schema for the configuration screen.
-
-    Returns:
-        schema.Schema: The schema for the configuration screen.
-    """
+    """Creates the schema for the configuration screen."""
 
     return schema.Schema(
         version = "1",
@@ -336,4 +280,4 @@ def get_schema():
                 default = DEFAULT_CONTENT_COLOR,
             ),
         ],
-    )
+    )1(
