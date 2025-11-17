@@ -110,23 +110,25 @@ def render_articles(articles, show_content, article_color, content_color, font):
     article_text = []
 
     for article in articles:
+        # Headline: right-aligned across the full 64-pixel width
         article_text.append(
             render.WrappedText(
                 article[0].strip(),
                 color = article_color,
                 font = font,
                 width = 64,
-                align = "right",  # RTL-style headline
+                align = "right",
             )
         )
         if show_content:
+            # Content: also right-aligned
             article_text.append(
                 render.WrappedText(
                     article[1].strip(),
                     color = content_color,
                     font = font,
                     width = 64,
-                    align = "right",  # RTL-style content
+                    align = "right",
                 )
             )
         article_text.append(render.Box(width = 64, height = 8, color = "#000000"))
@@ -274,4 +276,3 @@ def get_schema():
             ),
         ],
     )
-
