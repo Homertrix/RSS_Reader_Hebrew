@@ -2,7 +2,7 @@
 Applet: RSS Reader
 Summary: RSS Feed Reader
 Description: Displays entries from an RSS feed URL.
-Author: Daniel Sitnik (minor RTL alignment tweak)
+Author: Daniel Sitnik
 """
 
 load("http.star", "http")
@@ -34,7 +34,7 @@ def main(config):
         render.Root: Root widget tree.
     """
 
-    # get config values (same as original)
+    # get config values
     feed_url = config.get("feed_url", DEFAULT_FEED_URL)
     feed_name = config.get("feed_name", DEFAULT_FEED_NAME)
     title_color = config.get("title_color", DEFAULT_TITLE_COLOR)
@@ -62,7 +62,6 @@ def main(config):
         show_full_animation = True,
         child = render.Column(
             children = [
-                # Feed name bar — only change is align="right"
                 render.Box(
                     width = 64,
                     height = 8,
@@ -71,7 +70,7 @@ def main(config):
                         feed_name,
                         color = title_color,
                         font = "tom-thumb",
-                        align = "right",
+                        align = "right",  # RTL-style title bar
                     ),
                 ),
                 render.Marquee(
@@ -107,33 +106,29 @@ def render_articles(articles, show_content, article_color, content_color, font):
         list: List of widgets.
     """
 
-    # formats color and font of text
+    #formats color and font of text
     article_text = []
 
     for article in articles:
-        # Headline: right-aligned across the 64-pixel width
         article_text.append(
             render.WrappedText(
                 article[0].strip(),
                 color = article_color,
                 font = font,
                 width = 64,
-                align = "right",
+                align = "right",  # RTL-style headline
             )
         )
-
         if show_content:
-            # Content: also right-aligned
             article_text.append(
                 render.WrappedText(
                     article[1].strip(),
                     color = content_color,
                     font = font,
                     width = 64,
-                    align = "right",
+                    align = "right",  # RTL-style content
                 )
             )
-
         article_text.append(render.Box(width = 64, height = 8, color = "#000000"))
 
     return article_text
