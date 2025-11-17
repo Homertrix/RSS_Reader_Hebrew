@@ -2,7 +2,7 @@
 Applet: RSS Reader
 Summary: RSS Feed Reader
 Description: Displays entries from an RSS feed URL.
-Author: Daniel Sitnik
+Author: Homertrix
 """
 
 load("http.star", "http")
@@ -274,3 +274,4 @@ def get_schema():
             ),
         ],
     )
+
