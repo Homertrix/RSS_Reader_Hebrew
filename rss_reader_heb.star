@@ -23,57 +23,40 @@ DEFAULT_SHOW_CONTENT = False
 DEFAULT_CONTENT_COLOR = "#ff8c00"
 DEFAULT_FONT = "tom-thumb"
 
-# -----------------------------------------
-# Hebrew detection & text helper
-# -----------------------------------------
+# -------------------------------------------------
+# Helper to render wrapped text with optional RTL
+# -------------------------------------------------
 
-# Basic Hebrew alphabet (including finals)
-HEBREW_CHARS = "אבגדהוזחטיכלמנסעפצקרשתםןךףץ"
-
-def is_hebrew(text):
+def make_wrapped_text(text, color, font, rtl_mode, debug_rtl):
     """
-    Return True if text contains any Hebrew letters.
-    Avoids ord(); just checks against a set of known Hebrew characters.
-    """
-    if text == None:
-        return False
-
-    t = str(text)
-    for ch in t:
-        if ch in HEBREW_CHARS:
-            return True
-    return False
-
-
-def make_wrapped_text(text, color, font, debug_hebrew):
-    """
-    Create a WrappedText widget that:
-    - Right-aligns if the text contains Hebrew characters
-    - Left-aligns otherwise
-    - In debug mode, prefixes detected Hebrew with '↔ ' so you can see it on-device
+    Wraps text for display:
+    - If rtl_mode is True, right-align.
+    - Otherwise, left-align (original behavior).
+    - If debug_rtl is True, prefix all lines with ↔ so you can see it's using this path.
     """
     if text == None:
         t = ""
     else:
+        # In your original code data_xml.query(...) was passed directly and worked,
+        # so we just cast to string and strip.
         t = str(text).strip()
 
-    heb = is_hebrew(t)
-    align = "right" if heb else "left"
-
-    if debug_hebrew and heb:
+    if debug_rtl and rtl_mode:
         t = "↔ " + t
+
+    align = "right" if rtl_mode else "left"
 
     return render.WrappedText(
         t,
         color = color,
         font = font,
-        width = 64,      # full Tidbyt width so alignment is meaningful
+        width = 64,      # full Tidbyt width so alignment actually matters
         align = align,
     )
 
-# -----------------------------------------
+# -------------------------------------------------
 # Main
-# -----------------------------------------
+# -------------------------------------------------
 
 def main(config):
     """Main app method.
@@ -85,7 +68,7 @@ def main(config):
         render.Root: Root widget tree.
     """
 
-    # get config values
+    # get config values (same IDs as your original, plus two toggles)
     feed_url = config.get("feed_url", DEFAULT_FEED_URL)
     feed_name = config.get("feed_name", DEFAULT_FEED_NAME)
     title_color = config.get("title_color", DEFAULT_TITLE_COLOR)
@@ -95,27 +78,28 @@ def main(config):
     show_content = config.bool("show_content", DEFAULT_SHOW_CONTENT)
     content_color = config.get("content_color", DEFAULT_CONTENT_COLOR)
     font = config.get("font", DEFAULT_FONT)
-    debug_hebrew = config.bool("debug_hebrew", False)
+
+    # NEW: RTL + debug toggles
+    rtl_mode = config.bool("rtl_mode", False)
+    debug_rtl = config.bool("debug_rtl", False)
 
     # if feed name is empty, show as "RSS Feed"
-    if feed_name.strip() == "":
+    if str(feed_name).strip() == "":
         feed_name = "RSS Feed"
 
     # if feed url is empty, use default
-    if feed_url.strip() == "":
+    if str(feed_url).strip() == "":
         feed_url = DEFAULT_FEED_URL
 
-    # get feed articles (unchanged logic)
+    # get feed articles (EXACT same logic as original, see get_feed below)
     articles = get_feed(feed_url, article_count)
 
-    # header alignment (optional RTL for Hebrew feed name)
-    feed_name_is_hebrew = is_hebrew(feed_name)
-    header_align = "right" if feed_name_is_hebrew else "left"
+    # Header alignment: follow RTL mode globally
+    header_align = "right" if rtl_mode else "left"
+    header_text = str(feed_name)
 
-    if debug_hebrew and feed_name_is_hebrew:
-        feed_name_display = "↔ " + feed_name
-    else:
-        feed_name_display = feed_name
+    if debug_rtl and rtl_mode:
+        header_text = "↔ " + header_text
 
     # render view
     return render.Root(
@@ -123,17 +107,19 @@ def main(config):
         show_full_animation = True,
         child = render.Column(
             children = [
+                # Feed name bar
                 render.Box(
                     width = 64,
                     height = 8,
                     color = title_bg_color,
                     child = render.Text(
-                        feed_name_display,
+                        header_text,
                         color = title_color,
                         font = "tom-thumb",
                         align = header_align,
                     ),
                 ),
+                # Articles marquee (vertical)
                 render.Marquee(
                     height = 24,
                     scroll_direction = "vertical",
@@ -146,7 +132,8 @@ def main(config):
                             article_color,
                             content_color,
                             font,
-                            debug_hebrew,
+                            rtl_mode,
+                            debug_rtl,
                         ),
                     ),
                 ),
@@ -154,11 +141,11 @@ def main(config):
         ),
     )
 
-# -----------------------------------------
-# Rendering articles (only this changed)
-# -----------------------------------------
+# -------------------------------------------------
+# Rendering articles
+# -------------------------------------------------
 
-def render_articles(articles, show_content, article_color, content_color, font, debug_hebrew):
+def render_articles(articles, show_content, article_color, content_color, font, rtl_mode, debug_rtl):
     """Renders the widgets to display the articles.
 
     Args:
@@ -171,30 +158,31 @@ def render_articles(articles, show_content, article_color, content_color, font, 
         list: List of widgets.
     """
 
-    # formats color and font of text
     article_text = []
 
     for article in articles:
         title = article[0]
         content = article[1]
 
-        # Use helper so Hebrew titles align RTL
+        # Title
         article_text.append(
-            make_wrapped_text(title, article_color, font, debug_hebrew)
+            make_wrapped_text(title, article_color, font, rtl_mode, debug_rtl)
         )
 
+        # Optional content
         if show_content:
             article_text.append(
-                make_wrapped_text(content, content_color, font, debug_hebrew)
+                make_wrapped_text(content, content_color, font, rtl_mode, debug_rtl)
             )
 
+        # Spacer between articles
         article_text.append(render.Box(width = 64, height = 8, color = "#000000"))
 
     return article_text
 
-# -----------------------------------------
-# RSS fetching (unchanged from your original)
-# -----------------------------------------
+# -------------------------------------------------
+# RSS fetching (unchanged from original)
+# -------------------------------------------------
 
 def get_feed(url, article_count):
     """Retrieves an RSS feeds and builds a list with article's titles and content.
@@ -223,9 +211,9 @@ def get_feed(url, article_count):
 
     return articles
 
-# -----------------------------------------
-# Configuration schema (same as original + 1 toggle)
-# -----------------------------------------
+# -------------------------------------------------
+# Configuration schema (original + 2 toggles)
+# -------------------------------------------------
 
 def get_schema():
     """Creates the schema for the configuration screen.
@@ -258,26 +246,11 @@ def get_schema():
                 icon = "hashtag",
                 default = "3",
                 options = [
-                    schema.Option(
-                        display = "1",
-                        value = "1",
-                    ),
-                    schema.Option(
-                        display = "2",
-                        value = "2",
-                    ),
-                    schema.Option(
-                        display = "3",
-                        value = "3",
-                    ),
-                    schema.Option(
-                        display = "4",
-                        value = "4",
-                    ),
-                    schema.Option(
-                        display = "5",
-                        value = "5",
-                    ),
+                    schema.Option(display = "1", value = "1"),
+                    schema.Option(display = "2", value = "2"),
+                    schema.Option(display = "3", value = "3"),
+                    schema.Option(display = "4", value = "4"),
+                    schema.Option(display = "5", value = "5"),
                 ],
             ),
             schema.Dropdown(
@@ -287,14 +260,8 @@ def get_schema():
                 icon = "textHeight",
                 default = DEFAULT_FONT,
                 options = [
-                    schema.Option(
-                        display = "Default",
-                        value = DEFAULT_FONT,
-                    ),
-                    schema.Option(
-                        display = "Larger",
-                        value = "tb-8",
-                    ),
+                    schema.Option(display = "Default", value = DEFAULT_FONT),
+                    schema.Option(display = "Larger", value = "tb-8"),
                 ],
             ),
             schema.Toggle(
@@ -304,10 +271,19 @@ def get_schema():
                 icon = "toggleOff",
                 default = DEFAULT_SHOW_CONTENT,
             ),
+            # NEW: RTL mode toggle
             schema.Toggle(
-                id = "debug_hebrew",
-                name = "Debug Hebrew / RTL",
-                desc = "Mark detected Hebrew with ↔ and right-align those lines.",
+                id = "rtl_mode",
+                name = "Right-to-Left Mode",
+                desc = "Right-align all titles/content (use for Hebrew feeds).",
+                icon = "formatTextdirectionRToL",
+                default = False,
+            ),
+            # NEW: Debug toggle (just adds ↔ prefix when RTL is on)
+            schema.Toggle(
+                id = "debug_rtl",
+                name = "Debug RTL",
+                desc = "Prefix lines with ↔ when RTL mode is on, so you can confirm alignment.",
                 icon = "bugReport",
                 default = False,
             ),
