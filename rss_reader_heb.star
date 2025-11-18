@@ -7,25 +7,80 @@ load("http.star", "http")
 load("render.star", "render")
 load("schema.star", "schema")
 load("xpath.star", "xpath")
+load("encoding/base64.star", "base64")
 
 # Cache data for 15 minutes
 CACHE_TTL_SECONDS = 900
 
 # Defaults (used if config doesn't provide values)
-DEFAULT_FEED_URL = "https://discuss.tidbyt.com/latest.rss"
-DEFAULT_FEED_NAME = "Tidbyt Forums"
+DEFAULT_FEED_URL = "https://www.ynet.co.il/Integration/StoryRss2.xml"
+DEFAULT_FEED_NAME = "Ynet News"
 DEFAULT_ARTICLE_COUNT = "3"
 DEFAULT_TITLE_COLOR = "#db7e35"
 DEFAULT_TITLE_BG_COLOR = "#333333"
 DEFAULT_ARTICLE_COLOR = "#65d1e6"
-DEFAULT_SHOW_CONTENT = False
+DEFAULT_SHOW_CONTENT = "false"
 DEFAULT_CONTENT_COLOR = "#ff8c00"
 DEFAULT_FONT = "tb-8"  # tb-8 so Hebrew base letters show
 
+# Custom Hebrew font with finals support (embedded as base64)
+# This would be a BDF font file encoded as base64
+# For now, we'll use the standard font but with proper final letter handling
+CUSTOM_HEBREW_FONT = None  # Will be populated if you provide a font file
+
 
 # --------------------------------------------------------------------
-# Hebrew helpers
+# Hebrew helpers - WITH FINALS SUPPORT
 # --------------------------------------------------------------------
+
+def reverse_text_with_finals(text):
+    """
+    Reverse text for RTL display while preserving Hebrew final letters.
+    Hebrew final letters appear at the END of words, so when we reverse
+    the text, we need to swap them with their regular forms.
+    """
+    if text == None:
+        return ""
+    
+    s = str(text)
+    
+    # First, reverse the entire string
+    reversed_text = ""
+    for i in range(len(s) - 1, -1, -1):
+        reversed_text = reversed_text + s[i]
+    
+    # Now swap final letters with regular forms since they're now in wrong positions
+    # When reversed, finals that were at word-ends are now at word-starts, so swap them
+    out = ""
+    for i in range(len(reversed_text)):
+        ch = reversed_text[i]
+        code = ord(ch)
+        
+        # Check if this is a regular letter that should become final
+        # (at the start of a reversed word = end of original word)
+        next_is_space = (i + 1 >= len(reversed_text)) or (reversed_text[i + 1] == " ")
+        prev_is_space = (i == 0) or (reversed_text[i - 1] == " ")
+        
+        # כ (0x05DB) -> ך (0x05DA) at word boundaries after reversal
+        if code == 0x05DB and next_is_space and not prev_is_space:
+            out = out + "\u05DA"
+        # מ (0x05DE) -> ם (0x05DD)
+        elif code == 0x05DE and next_is_space and not prev_is_space:
+            out = out + "\u05DD"
+        # נ (0x05E0) -> ן (0x05DF)
+        elif code == 0x05E0 and next_is_space and not prev_is_space:
+            out = out + "\u05DF"
+        # פ (0x05E4) -> ף (0x05E3)
+        elif code == 0x05E4 and next_is_space and not prev_is_space:
+            out = out + "\u05E3"
+        # צ (0x05E6) -> ץ (0x05E5)
+        elif code == 0x05E6 and next_is_space and not prev_is_space:
+            out = out + "\u05E5"
+        else:
+            out = out + ch
+    
+    return out
+
 
 def normalize_hebrew_finals(text):
     """
@@ -49,19 +104,19 @@ def normalize_hebrew_finals(text):
 
         # ך (0x05DA) -> כ (0x05DB)
         if code == 0x05DA:
-            out = out + u"\u05DB"
+            out = out + "\u05DB"
         # ם (0x05DD) -> מ (0x05DE)
         elif code == 0x05DD:
-            out = out + u"\u05DE"
+            out = out + "\u05DE"
         # ן (0x05DF) -> נ (0x05E0)
         elif code == 0x05DF:
-            out = out + u"\u05E0"
+            out = out + "\u05E0"
         # ף (0x05E3) -> פ (0x05E4)
         elif code == 0x05E3:
-            out = out + u"\u05E4"
+            out = out + "\u05E4"
         # ץ (0x05E5) -> צ (0x05E6)
         elif code == 0x05E5:
-            out = out + u"\u05E6"
+            out = out + "\u05E6"
         else:
             out = out + ch
 
@@ -76,17 +131,18 @@ def reverse_text(s):
     return out
 
 
-def make_headline_text(text, color, font):
+def make_headline_text(text, color, font, use_finals=False):
     """
     Headlines/content for Hebrew feeds:
-      - normalize Hebrew final letters -> regular forms
-      - reverse the normalized string
+      - If use_finals=True: reverse with final letter preservation
+      - If use_finals=False: normalize finals then reverse (old behavior)
       - right-align
-    This will also affect non-Hebrew feeds (English will appear reversed),
-    but is ideal for Hebrew-heavy feeds like Ynet.
     """
-    s = normalize_hebrew_finals(text)
-    s = reverse_text(s)
+    if use_finals:
+        s = reverse_text_with_finals(text)
+    else:
+        s = normalize_hebrew_finals(text)
+        s = reverse_text(s)
 
     return render.WrappedText(
         s,
@@ -135,9 +191,17 @@ def main(config):
     title_bg_color = config.get("title_bg_color", DEFAULT_TITLE_BG_COLOR)
     article_count = int(config.get("article_count", DEFAULT_ARTICLE_COUNT))
     article_color = config.get("article_color", DEFAULT_ARTICLE_COLOR)
-    show_content = config.bool("show_content", DEFAULT_SHOW_CONTENT)
+    
+    # FIX: Use config.get with string comparison instead of config.bool
+    show_content_str = config.get("show_content", DEFAULT_SHOW_CONTENT)
+    show_content = (show_content_str == "true")
+    
     content_color = config.get("content_color", DEFAULT_CONTENT_COLOR)
     font = config.get("font", DEFAULT_FONT)
+    
+    # NEW: Option to use final letters
+    use_finals_str = config.get("use_finals", "false")
+    use_finals = (use_finals_str == "true")
 
     # Fallbacks
     if str(feed_name).strip() == "":
@@ -180,6 +244,7 @@ def main(config):
                             article_color,
                             content_color,
                             font,
+                            use_finals,
                         ),
                     ),
                 ),
@@ -188,7 +253,7 @@ def main(config):
     )
 
 
-def render_articles(articles, show_content, article_color, content_color, font):
+def render_articles(articles, show_content, article_color, content_color, font, use_finals):
     # Build list of article widgets
     article_text = []
 
@@ -196,15 +261,15 @@ def render_articles(articles, show_content, article_color, content_color, font):
         title = article[0]
         body = article[1]
 
-        # Title/headline: normalize finals -> reverse + right-align
+        # Title/headline: reverse + right-align (with or without finals)
         article_text.append(
-            make_headline_text(title, article_color, font)
+            make_headline_text(title, article_color, font, use_finals)
         )
 
         # Optional content: same RTL treatment
         if show_content:
             article_text.append(
-                make_headline_text(body, content_color, font)
+                make_headline_text(body, content_color, font, use_finals)
             )
 
         # Spacer between articles
@@ -220,7 +285,7 @@ def get_feed(url, article_count):
     res = http.get(url = url, ttl_seconds = CACHE_TTL_SECONDS)
     if res.status_code != 200:
         fail(
-            "Request to %s failed with status code: %d: %s"
+            "Request to %s failed with status code: %d - %s"
             % (url, res.status_code, res.body())
         )
 
@@ -288,11 +353,18 @@ def get_schema():
                 ],
             ),
             schema.Toggle(
+                id = "use_finals",
+                name = "Use Hebrew Final Letters",
+                desc = "Enable if your font supports Hebrew final letters (ךםןףץ).",
+                icon = "language",
+                default = False,
+            ),
+            schema.Toggle(
                 id = "show_content",
                 name = "Show Article Content",
                 desc = "Show the article's content (also RTL).",
                 icon = "toggleOff",
-                default = DEFAULT_SHOW_CONTENT,
+                default = False,
             ),
             schema.Color(
                 id = "title_color",
