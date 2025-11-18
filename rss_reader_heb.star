@@ -1,29 +1,36 @@
-# RSS Reader with basic Hebrew RTL detection (codepoint-based)
+# RSS Reader with Hebrew RTL support
+# - Detects Hebrew by Unicode codepoints (0x0590–0x05FF)
+# - If Hebrew:
+#     * always right-align
+#     * optional reversal controlled by config flag rtl_reverse
+# - Non-Hebrew stays left-aligned and unreversed
 
 load("http.star", "http")
 load("render.star", "render")
 load("schema.star", "schema")
 load("xpath.star", "xpath")
 
-# cache data for 15 minutes
+# Cache data for 15 minutes
 CACHE_TTL_SECONDS = 900
 
+# Defaults
 DEFAULT_FEED_URL = "https://discuss.tidbyt.com/latest.rss"
-DEFAULT_ARTICLE_COUNT = "3"
 DEFAULT_FEED_NAME = "Tidbyt Forums"
+DEFAULT_ARTICLE_COUNT = "3"
 DEFAULT_TITLE_COLOR = "#db7e35"
 DEFAULT_TITLE_BG_COLOR = "#333333"
 DEFAULT_ARTICLE_COLOR = "#65d1e6"
 DEFAULT_SHOW_CONTENT = False
 DEFAULT_CONTENT_COLOR = "#ff8c00"
 DEFAULT_FONT = "tom-thumb"
+DEFAULT_RTL_REVERSE = False   # default: do NOT reverse Hebrew, only right-align
 
+
+# ---- Hebrew detection using Unicode codepoints ("ASCII code") ----
 
 def is_hebrew(text):
-    """
-    Detect Hebrew based on code points (Unicode / 'ASCII code'):
-    Basic Hebrew block: U+0590–U+05FF == 1424–1535
-    """
+    # Detect Hebrew based on Unicode code points:
+    # Basic Hebrew block: U+0590–U+05FF
     if text == None:
         return False
 
@@ -33,37 +40,36 @@ def is_hebrew(text):
     for i in range(n):
         ch = s[i]
         code = ord(ch)
-        if code >= 1424 and code <= 1535:
+        # 0x0590–0x05FF (1424–1535)
+        if code >= 0x0590 and code <= 0x05FF:
             return True
 
     return False
 
 
 def reverse_text(s):
-    """
-    Reverse a string using range(), since we can't use Python slicing with a step.
-    """
+    # Reverse string using a backwards for loop
     out = ""
-    # range(start, stop, step) – walk backwards from len(s)-1 down to 0
     for i in range(len(s) - 1, -1, -1):
         out = out + s[i]
     return out
 
 
-def make_wrapped_text(text, color, font):
-    """
-    Build a WrappedText widget that:
-    - Detects Hebrew via is_hebrew()
-    - If Hebrew: reverse + right-align
-    - Else: normal + left-align
-    """
+def make_wrapped_text(text, color, font, rtl_reverse):
+    # Wrap text and apply Hebrew RTL behavior:
+    # - If Hebrew: always right-align, optional reverse if rtl_reverse is True
+    # - If not Hebrew: left-align, no reverse
     if text == None:
         s = ""
     else:
         s = str(text).strip()
 
-    if is_hebrew(s):
+    heb = is_hebrew(s)
+
+    if heb and rtl_reverse:
         s = reverse_text(s)
+
+    if heb:
         align = "right"
     else:
         align = "left"
@@ -77,10 +83,10 @@ def make_wrapped_text(text, color, font):
     )
 
 
-def main(config):
-    """Main app method."""
+# ---- Main app ----
 
-    # get config values (same IDs as original app)
+def main(config):
+    # Get config values (same IDs as original app, plus rtl_reverse)
     feed_url = config.get("feed_url", DEFAULT_FEED_URL)
     feed_name = config.get("feed_name", DEFAULT_FEED_NAME)
     title_color = config.get("title_color", DEFAULT_TITLE_COLOR)
@@ -90,42 +96,39 @@ def main(config):
     show_content = config.bool("show_content", DEFAULT_SHOW_CONTENT)
     content_color = config.get("content_color", DEFAULT_CONTENT_COLOR)
     font = config.get("font", DEFAULT_FONT)
+    rtl_reverse = config.bool("rtl_reverse", DEFAULT_RTL_REVERSE)
 
-    # if feed name is empty, show as "RSS Feed"
+    # Fallbacks
     if str(feed_name).strip() == "":
         feed_name = "RSS Feed"
 
-    # if feed url is empty, use default
     if str(feed_url).strip() == "":
         feed_url = DEFAULT_FEED_URL
 
-    # get feed articles
+    # Get feed articles
     articles = get_feed(feed_url, article_count)
 
-    # Title bar: also Hebrew-aware
+    # Title text (same RTL behavior)
     title_text = str(feed_name).strip()
-    if is_hebrew(title_text):
-        title_text = reverse_text(title_text)
-        title_align = "right"
-    else:
-        title_align = "left"
 
     return render.Root(
         delay = 100,
         show_full_animation = True,
         child = render.Column(
             children = [
+                # Header bar
                 render.Box(
                     width = 64,
                     height = 8,
                     color = title_bg_color,
-                    child = render.Text(
+                    child = make_wrapped_text(
                         title_text,
-                        color = title_color,
-                        font = "tom-thumb",
-                        align = title_align,
+                        title_color,
+                        "tom-thumb",  # small font for header
+                        rtl_reverse,
                     ),
                 ),
+                # Scrolling list of articles
                 render.Marquee(
                     height = 24,
                     scroll_direction = "vertical",
@@ -138,6 +141,7 @@ def main(config):
                             article_color,
                             content_color,
                             font,
+                            rtl_reverse,
                         ),
                     ),
                 ),
@@ -146,24 +150,23 @@ def main(config):
     )
 
 
-def render_articles(articles, show_content, article_color, content_color, font):
-    """Renders the widgets to display the articles."""
-
+def render_articles(articles, show_content, article_color, content_color, font, rtl_reverse):
+    # Build list of article widgets
     article_text = []
 
     for article in articles:
         title = article[0]
         body = article[1]
 
-        # Title: Hebrew-aware
+        # Title: Hebrew-aware (align + optional reverse)
         article_text.append(
-            make_wrapped_text(title, article_color, font)
+            make_wrapped_text(title, article_color, font, rtl_reverse)
         )
 
-        # Optional body: also Hebrew-aware
+        # Optional content: also Hebrew-aware
         if show_content:
             article_text.append(
-                make_wrapped_text(body, content_color, font)
+                make_wrapped_text(body, content_color, font, rtl_reverse)
             )
 
         # Spacer between articles
@@ -175,8 +178,7 @@ def render_articles(articles, show_content, article_color, content_color, font):
 
 
 def get_feed(url, article_count):
-    """Retrieves an RSS feed and builds a list with article titles and content."""
-
+    # Retrieve RSS feed items
     res = http.get(url = url, ttl_seconds = CACHE_TTL_SECONDS)
     if res.status_code != 200:
         fail(
@@ -186,22 +188,21 @@ def get_feed(url, article_count):
 
     articles = []
     data_xml = xpath.loads(res.body())
+
     for i in range(1, article_count + 1):
         title_query = "//item[%s]/title" % str(i)
         desc_query = "//item[%s]/description" % str(i)
-        articles.append(
-            (
-                data_xml.query(title_query),
-                str(data_xml.query(desc_query)).replace("None", ""),
-            )
-        )
+
+        title_raw = data_xml.query(title_query)
+        desc_raw = str(data_xml.query(desc_query)).replace("None", "")
+
+        articles.append((title_raw, desc_raw))
 
     return articles
 
 
 def get_schema():
-    """Creates the schema for the configuration screen."""
-
+    # Configuration schema (same as original app + RTL toggle)
     return schema.Schema(
         version = "1",
         fields = [
@@ -251,6 +252,13 @@ def get_schema():
                 icon = "toggleOff",
                 default = DEFAULT_SHOW_CONTENT,
             ),
+            schema.Toggle(
+                id = "rtl_reverse",
+                name = "Reverse Hebrew text",
+                desc = "If enabled, reverse Hebrew strings before drawing.",
+                icon = "toggleOff",
+                default = DEFAULT_RTL_REVERSE,
+            ),
             schema.Color(
                 id = "title_color",
                 name = "Feed Name Color",
@@ -280,4 +288,4 @@ def get_schema():
                 default = DEFAULT_CONTENT_COLOR,
             ),
         ],
-    )1(
+    )
