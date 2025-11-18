@@ -1,13 +1,13 @@
 # RSS Reader - Hebrew RTL headlines + centered English title
 # - Configurable via Tidbyt/Pixlet config (feed_url, feed_name, etc.)
-# - Headlines: normalize finals -> reverse + right-align (for Hebrew feeds like Ynet)
+# - Uses the 6x13 font which has better Unicode support including Hebrew
+# - Headlines: reverse + right-align for Hebrew feeds
 # - Title (feed_name): English/LTR, not reversed, centered in header bar
 
 load("http.star", "http")
 load("render.star", "render")
 load("schema.star", "schema")
 load("xpath.star", "xpath")
-load("encoding/base64.star", "base64")
 
 # Cache data for 15 minutes
 CACHE_TTL_SECONDS = 900
@@ -21,12 +21,11 @@ DEFAULT_TITLE_BG_COLOR = "#333333"
 DEFAULT_ARTICLE_COLOR = "#65d1e6"
 DEFAULT_SHOW_CONTENT = "false"
 DEFAULT_CONTENT_COLOR = "#ff8c00"
-DEFAULT_FONT = "tb-8"  # tb-8 so Hebrew base letters show
+DEFAULT_FONT = "6x13"  # 6x13 has better Unicode/Hebrew support than tb-8
 
 # Custom Hebrew font with finals support (embedded as base64)
-# This would be a BDF font file encoded as base64
-# For now, we'll use the standard font but with proper final letter handling
-CUSTOM_HEBREW_FONT = None  # Will be populated if you provide a font file
+# Unfortunately, Pixlet doesn't support embedding custom fonts yet
+# We'll use the 6x13 font which has Hebrew support
 
 
 # --------------------------------------------------------------------
@@ -348,7 +347,8 @@ def get_schema():
                 icon = "textHeight",
                 default = DEFAULT_FONT,
                 options = [
-                    schema.Option(display = "Hebrew (tb-8)", value = "tb-8"),
+                    schema.Option(display = "Large (6x13)", value = "6x13"),
+                    schema.Option(display = "Medium (5x8)", value = "5x8"),
                     schema.Option(display = "Small (tom-thumb)", value = "tom-thumb"),
                 ],
             ),
