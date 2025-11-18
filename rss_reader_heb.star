@@ -1,9 +1,6 @@
-# RSS Reader with Hebrew RTL support
-# - Detects Hebrew by Unicode codepoints (0x0590–0x05FF)
-# - If Hebrew:
-#     * always right-align
-#     * optional reversal controlled by config flag rtl_reverse
-# - Non-Hebrew stays left-aligned and unreversed
+# RSS Reader - Hebrew RTL headlines + centered English title
+# - Headlines: sanitize + reverse + right-align (for Hebrew feeds like Ynet)
+# - Title (feed_name): English/LTR, not reversed, centered in header bar
 
 load("http.star", "http")
 load("render.star", "render")
@@ -22,29 +19,46 @@ DEFAULT_TITLE_BG_COLOR = "#333333"
 DEFAULT_ARTICLE_COLOR = "#65d1e6"
 DEFAULT_SHOW_CONTENT = False
 DEFAULT_CONTENT_COLOR = "#ff8c00"
-DEFAULT_FONT = "tom-thumb"
-DEFAULT_RTL_REVERSE = False   # default: do NOT reverse Hebrew, only right-align
+
+# IMPORTANT: use tb-8 as default so Hebrew shows
+DEFAULT_FONT = "tb-8"
 
 
-# ---- Hebrew detection using Unicode codepoints ("ASCII code") ----
-
-def is_hebrew(text):
-    # Detect Hebrew based on Unicode code points:
-    # Basic Hebrew block: U+0590–U+05FF
+def sanitize_text(text):
+    """
+    Keep only:
+      - Printable ASCII (0x20–0x7E)
+      - Hebrew block (0x0590–0x05FF)
+    Convert non-breaking space to regular space.
+    Drop anything else (to avoid '?' glyphs when the font has no glyph).
+    """
     if text == None:
-        return False
+        return ""
 
     s = str(text)
-    n = len(s)
+    out = ""
 
-    for i in range(n):
+    for i in range(len(s)):
         ch = s[i]
         code = ord(ch)
-        # 0x0590–0x05FF (1424–1535)
-        if code >= 0x0590 and code <= 0x05FF:
-            return True
 
-    return False
+        # Printable ASCII
+        if code >= 0x20 and code <= 0x7E:
+            out = out + ch
+
+        # Hebrew block
+        elif code >= 0x0590 and code <= 0x05FF:
+            out = out + ch
+
+        # Non-breaking space -> regular space
+        elif code == 0x00A0:
+            out = out + " "
+
+        # Else: skip (unsupported glyph)
+        else:
+            pass
+
+    return out
 
 
 def reverse_text(s):
@@ -55,38 +69,50 @@ def reverse_text(s):
     return out
 
 
-def make_wrapped_text(text, color, font, rtl_reverse):
-    # Wrap text and apply Hebrew RTL behavior:
-    # - If Hebrew: always right-align, optional reverse if rtl_reverse is True
-    # - If not Hebrew: left-align, no reverse
-    if text == None:
-        s = ""
-    else:
-        s = str(text).strip()
-
-    heb = is_hebrew(s)
-
-    if heb and rtl_reverse:
-        s = reverse_text(s)
-
-    if heb:
-        align = "right"
-    else:
-        align = "left"
+def make_headline_text(text, color, font):
+    """
+    Headlines/content: force RTL
+      - sanitize
+      - reverse
+      - right-align
+    Assumes feed is mostly Hebrew (e.g., Ynet).
+    """
+    s = sanitize_text(text)
+    s = reverse_text(s)
 
     return render.WrappedText(
         s,
         color = color,
         font = font,
         width = 64,
-        align = align,
+        align = "right",
     )
 
 
-# ---- Main app ----
+def make_centered_title(text, color):
+    """
+    Applet title (feed_name):
+      - use as-is (LTR)
+      - not sanitized, not reversed
+      - centered in 64px width
+      - small tom-thumb font for header
+    """
+    if text == None:
+        s = ""
+    else:
+        s = str(text).strip()
+
+    return render.WrappedText(
+        s,
+        color = color,
+        font = "tom-thumb",
+        width = 64,
+        align = "center",
+    )
+
 
 def main(config):
-    # Get config values (same IDs as original app, plus rtl_reverse)
+    # Get config values
     feed_url = config.get("feed_url", DEFAULT_FEED_URL)
     feed_name = config.get("feed_name", DEFAULT_FEED_NAME)
     title_color = config.get("title_color", DEFAULT_TITLE_COLOR)
@@ -95,8 +121,7 @@ def main(config):
     article_color = config.get("article_color", DEFAULT_ARTICLE_COLOR)
     show_content = config.bool("show_content", DEFAULT_SHOW_CONTENT)
     content_color = config.get("content_color", DEFAULT_CONTENT_COLOR)
-    font = config.get("font", DEFAULT_FONT)
-    rtl_reverse = config.bool("rtl_reverse", DEFAULT_RTL_REVERSE)
+    font = config.get("font", DEFAULT_FONT)  # <- default is now tb-8
 
     # Fallbacks
     if str(feed_name).strip() == "":
@@ -108,27 +133,25 @@ def main(config):
     # Get feed articles
     articles = get_feed(feed_url, article_count)
 
-    # Title text (same RTL behavior)
-    title_text = str(feed_name).strip()
+    # Title text: English / LTR, centered
+    title_text = feed_name
 
     return render.Root(
         delay = 100,
         show_full_animation = True,
         child = render.Column(
             children = [
-                # Header bar
+                # Header bar with centered English title
                 render.Box(
                     width = 64,
                     height = 8,
                     color = title_bg_color,
-                    child = make_wrapped_text(
+                    child = make_centered_title(
                         title_text,
                         title_color,
-                        "tom-thumb",  # small font for header
-                        rtl_reverse,
                     ),
                 ),
-                # Scrolling list of articles
+                # Scrolling list of Hebrew headlines
                 render.Marquee(
                     height = 24,
                     scroll_direction = "vertical",
@@ -141,7 +164,6 @@ def main(config):
                             article_color,
                             content_color,
                             font,
-                            rtl_reverse,
                         ),
                     ),
                 ),
@@ -150,7 +172,7 @@ def main(config):
     )
 
 
-def render_articles(articles, show_content, article_color, content_color, font, rtl_reverse):
+def render_articles(articles, show_content, article_color, content_color, font):
     # Build list of article widgets
     article_text = []
 
@@ -158,15 +180,15 @@ def render_articles(articles, show_content, article_color, content_color, font, 
         title = article[0]
         body = article[1]
 
-        # Title: Hebrew-aware (align + optional reverse)
+        # Title/headline: forced RTL (sanitize + reverse + right-align)
         article_text.append(
-            make_wrapped_text(title, article_color, font, rtl_reverse)
+            make_headline_text(title, article_color, font)
         )
 
-        # Optional content: also Hebrew-aware
+        # Optional content: same RTL treatment
         if show_content:
             article_text.append(
-                make_wrapped_text(body, content_color, font, rtl_reverse)
+                make_headline_text(body, content_color, font)
             )
 
         # Spacer between articles
@@ -202,7 +224,7 @@ def get_feed(url, article_count):
 
 
 def get_schema():
-    # Configuration schema (same as original app + RTL toggle)
+    # Configuration schema
     return schema.Schema(
         version = "1",
         fields = [
@@ -216,7 +238,7 @@ def get_schema():
             schema.Text(
                 id = "feed_name",
                 name = "RSS Feed Name",
-                desc = "The name of the RSS feed.",
+                desc = "The name of the RSS feed (English, shown centered).",
                 icon = "font",
                 default = DEFAULT_FEED_NAME,
             ),
@@ -237,27 +259,20 @@ def get_schema():
             schema.Dropdown(
                 id = "font",
                 name = "Text Size",
-                desc = "Font size for text.",
+                desc = "Font size for headlines.",
                 icon = "textHeight",
                 default = DEFAULT_FONT,
                 options = [
-                    schema.Option(display = "Default", value = DEFAULT_FONT),
-                    schema.Option(display = "Larger", value = "tb-8"),
+                    schema.Option(display = "Hebrew (tb-8)", value = "tb-8"),
+                    schema.Option(display = "Small (tom-thumb)", value = "tom-thumb"),
                 ],
             ),
             schema.Toggle(
                 id = "show_content",
                 name = "Show Article Content",
-                desc = "Show the article's content.",
+                desc = "Show the article's content (also RTL).",
                 icon = "toggleOff",
                 default = DEFAULT_SHOW_CONTENT,
-            ),
-            schema.Toggle(
-                id = "rtl_reverse",
-                name = "Reverse Hebrew text",
-                desc = "If enabled, reverse Hebrew strings before drawing.",
-                icon = "toggleOff",
-                default = DEFAULT_RTL_REVERSE,
             ),
             schema.Color(
                 id = "title_color",
