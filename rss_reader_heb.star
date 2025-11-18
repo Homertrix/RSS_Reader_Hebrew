@@ -202,6 +202,8 @@ def render_articles(articles, show_content, article_color, content_color, font):
             render.Box(width = 64, height = 8, color = "#000000")
         )
 
+        # (Optional: could add more spacing or separators here)
+
     return article_text
 
 
