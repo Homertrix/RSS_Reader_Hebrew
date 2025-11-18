@@ -1,5 +1,5 @@
 # RSS Reader - Hebrew RTL headlines + centered English title
-# - Headlines: sanitize + reverse + right-align (for Hebrew feeds like Ynet)
+# - Headlines: normalize finals -> reverse + right-align (for Hebrew feeds like Ynet)
 # - Title (feed_name): English/LTR, not reversed, centered in header bar
 
 load("http.star", "http")
@@ -20,17 +20,19 @@ DEFAULT_ARTICLE_COLOR = "#65d1e6"
 DEFAULT_SHOW_CONTENT = False
 DEFAULT_CONTENT_COLOR = "#ff8c00"
 
-# IMPORTANT: use tb-8 as default so Hebrew shows
+# Use tb-8 as default so Hebrew shows
 DEFAULT_FONT = "tb-8"
 
 
-def sanitize_text(text):
+def normalize_hebrew_finals(text):
     """
-    Keep only:
-      - Printable ASCII (0x20–0x7E)
-      - Hebrew block (0x0590–0x05FF)
-    Convert non-breaking space to regular space.
-    Drop anything else (to avoid '?' glyphs when the font has no glyph).
+    Replace Hebrew final letters with their regular forms to avoid '?' glyphs
+    if the font doesn't support finals:
+      ך -> כ
+      ם -> מ
+      ן -> נ
+      ף -> פ
+      ץ -> צ
     """
     if text == None:
         return ""
@@ -42,21 +44,23 @@ def sanitize_text(text):
         ch = s[i]
         code = ord(ch)
 
-        # Printable ASCII
-        if code >= 0x20 and code <= 0x7E:
-            out = out + ch
-
-        # Hebrew block
-        elif code >= 0x0590 and code <= 0x05FF:
-            out = out + ch
-
-        # Non-breaking space -> regular space
-        elif code == 0x00A0:
-            out = out + " "
-
-        # Else: skip (unsupported glyph)
+        # ך (0x05DA) -> כ (0x05DB)
+        if code == 0x05DA:
+            out = out + u"\u05DB"
+        # ם (0x05DD) -> מ (0x05DE)
+        elif code == 0x05DD:
+            out = out + u"\u05DE"
+        # ן (0x05DF) -> נ (0x05E0)
+        elif code == 0x05DF:
+            out = out + u"\u05E0"
+        # ף (0x05E3) -> פ (0x05E4)
+        elif code == 0x05E3:
+            out = out + u"\u05E4"
+        # ץ (0x05E5) -> צ (0x05E6)
+        elif code == 0x05E5:
+            out = out + u"\u05E6"
         else:
-            pass
+            out = out + ch
 
     return out
 
@@ -71,13 +75,15 @@ def reverse_text(s):
 
 def make_headline_text(text, color, font):
     """
-    Headlines/content: force RTL
-      - sanitize
-      - reverse
+    Headlines/content for Hebrew feeds:
+      - normalize Hebrew final letters -> regular forms
+      - reverse the normalized string
       - right-align
     Assumes feed is mostly Hebrew (e.g., Ynet).
     """
-    s = sanitize_text(text)
+    # Normalize finals first (avoid '?')
+    s = normalize_hebrew_finals(text)
+    # Then reverse for visual RTL on Tidbyt
     s = reverse_text(s)
 
     return render.WrappedText(
@@ -93,9 +99,9 @@ def make_centered_title(text, color):
     """
     Applet title (feed_name):
       - use as-is (LTR)
-      - not sanitized, not reversed
+      - not reversed
       - centered in 64px width
-      - small tom-thumb font for header
+      - tom-thumb font for header
     """
     if text == None:
         s = ""
@@ -121,7 +127,7 @@ def main(config):
     article_color = config.get("article_color", DEFAULT_ARTICLE_COLOR)
     show_content = config.bool("show_content", DEFAULT_SHOW_CONTENT)
     content_color = config.get("content_color", DEFAULT_CONTENT_COLOR)
-    font = config.get("font", DEFAULT_FONT)  # <- default is now tb-8
+    font = config.get("font", DEFAULT_FONT)  # default is tb-8
 
     # Fallbacks
     if str(feed_name).strip() == "":
@@ -180,7 +186,7 @@ def render_articles(articles, show_content, article_color, content_color, font):
         title = article[0]
         body = article[1]
 
-        # Title/headline: forced RTL (sanitize + reverse + right-align)
+        # Title/headline: normalize finals -> reverse + right-align
         article_text.append(
             make_headline_text(title, article_color, font)
         )
