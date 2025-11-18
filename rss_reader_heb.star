@@ -1,4 +1,5 @@
 # RSS Reader - Hebrew RTL headlines + centered English title
+# - Configurable via Tidbyt/Pixlet config (feed_url, feed_name, etc.)
 # - Headlines: normalize finals -> reverse + right-align (for Hebrew feeds like Ynet)
 # - Title (feed_name): English/LTR, not reversed, centered in header bar
 
@@ -10,7 +11,7 @@ load("xpath.star", "xpath")
 # Cache data for 15 minutes
 CACHE_TTL_SECONDS = 900
 
-# Defaults
+# Defaults (used if config doesn't provide values)
 DEFAULT_FEED_URL = "https://discuss.tidbyt.com/latest.rss"
 DEFAULT_FEED_NAME = "Tidbyt Forums"
 DEFAULT_ARTICLE_COUNT = "3"
@@ -19,10 +20,12 @@ DEFAULT_TITLE_BG_COLOR = "#333333"
 DEFAULT_ARTICLE_COLOR = "#65d1e6"
 DEFAULT_SHOW_CONTENT = False
 DEFAULT_CONTENT_COLOR = "#ff8c00"
+DEFAULT_FONT = "tb-8"  # tb-8 so Hebrew base letters show
 
-# Use tb-8 as default so Hebrew shows
-DEFAULT_FONT = "tb-8"
 
+# --------------------------------------------------------------------
+# Hebrew helpers
+# --------------------------------------------------------------------
 
 def normalize_hebrew_finals(text):
     """
@@ -79,11 +82,10 @@ def make_headline_text(text, color, font):
       - normalize Hebrew final letters -> regular forms
       - reverse the normalized string
       - right-align
-    Assumes feed is mostly Hebrew (e.g., Ynet).
+    This will also affect non-Hebrew feeds (English will appear reversed),
+    but is ideal for Hebrew-heavy feeds like Ynet.
     """
-    # Normalize finals first (avoid '?')
     s = normalize_hebrew_finals(text)
-    # Then reverse for visual RTL on Tidbyt
     s = reverse_text(s)
 
     return render.WrappedText(
@@ -117,8 +119,16 @@ def make_centered_title(text, color):
     )
 
 
+# --------------------------------------------------------------------
+# Main entry point
+# --------------------------------------------------------------------
+
 def main(config):
-    # Get config values
+    """
+    Tidbyt/Pixlet entry point. Uses standard config inputs, similar to the
+    original rss_reader applet (feed_url, feed_name, etc.).
+    """
+
     feed_url = config.get("feed_url", DEFAULT_FEED_URL)
     feed_name = config.get("feed_name", DEFAULT_FEED_NAME)
     title_color = config.get("title_color", DEFAULT_TITLE_COLOR)
@@ -127,7 +137,7 @@ def main(config):
     article_color = config.get("article_color", DEFAULT_ARTICLE_COLOR)
     show_content = config.bool("show_content", DEFAULT_SHOW_CONTENT)
     content_color = config.get("content_color", DEFAULT_CONTENT_COLOR)
-    font = config.get("font", DEFAULT_FONT)  # default is tb-8
+    font = config.get("font", DEFAULT_FONT)
 
     # Fallbacks
     if str(feed_name).strip() == "":
@@ -157,7 +167,7 @@ def main(config):
                         title_color,
                     ),
                 ),
-                # Scrolling list of Hebrew headlines
+                # Scrolling list of headlines
                 render.Marquee(
                     height = 24,
                     scroll_direction = "vertical",
@@ -229,8 +239,12 @@ def get_feed(url, article_count):
     return articles
 
 
+# --------------------------------------------------------------------
+# Schema for config UI (Tidbyt app / pixlet serve)
+# --------------------------------------------------------------------
+
 def get_schema():
-    # Configuration schema
+    # Configuration schema, modeled after the original RSS Reader applet
     return schema.Schema(
         version = "1",
         fields = [
@@ -244,7 +258,7 @@ def get_schema():
             schema.Text(
                 id = "feed_name",
                 name = "RSS Feed Name",
-                desc = "The name of the RSS feed (English, shown centered).",
+                desc = "The name of the RSS feed.",
                 icon = "font",
                 default = DEFAULT_FEED_NAME,
             ),
@@ -253,7 +267,7 @@ def get_schema():
                 name = "Article Count",
                 desc = "Number of articles to display",
                 icon = "hashtag",
-                default = "3",
+                default = DEFAULT_ARTICLE_COUNT,
                 options = [
                     schema.Option(display = "1", value = "1"),
                     schema.Option(display = "2", value = "2"),
